@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Data;
+using System.Data.Common;
 using System.Data.SqlClient;
 using Bank_Application.Model;
 
@@ -7,13 +9,14 @@ namespace Bank_Application.Services
 	class DataBaseComands
 	{
 		SqlConnection con = new SqlConnection();
+		string conString = @"Data Source=(LocalDB)\MSSQLLocalDB;AttachDbFilename="
+						+ @"C:\Users\Stanley\source\repos\Bank Application\Bank Application\Bank.mdf"
+						+ ";Integrated Security=True";
 		public event EventHandler<TransactionInfoArgs> NewTransactionAlert;
 
 		public DataBaseComands()
 		{
-			con.ConnectionString = @"Data Source=(LocalDB)\MSSQLLocalDB;AttachDbFilename="
-						+ @"C:\Users\Stanley\source\repos\Bank Application\Bank Application\Bank.mdf"
-						+ ";Integrated Security=True";
+			con.ConnectionString = conString;
 		}
 
 		public void InsertCustormer(CustomerModel customerModel)
@@ -84,29 +87,16 @@ namespace Bank_Application.Services
 
 		public void GetBalance(long accNum)
 		{
-
-			con.Close();
-			con.Open();
 			try
 			{
-				SqlCommand cmd2 = new SqlCommand("select * from Customers where Account_Number = " + accNum, con);
-				SqlDataReader reader = cmd2.ExecuteReader();
-				if (reader.HasRows)
+				SqlDataReader reader = SqlCommands.SelectSql(accNum, con);
+				while (reader.Read())
 				{
-					while (reader.Read())
-					{
-						Console.WriteLine("------------------------------------------------------------");
-						Console.WriteLine("Account Ballance: " + reader.GetValue(7));
-						Console.WriteLine("------------------------------------------------------------");
-
-					}
+					Console.WriteLine("------------------------------------------------------------");
+					Console.WriteLine("Account Ballance: " + reader.GetValue(7));
+					Console.WriteLine("------------------------------------------------------------");
 
 				}
-				else
-				{
-					Console.WriteLine("Account Number Doesnt Exist");
-				}
-
 
 			}
 			catch (Exception ex)
@@ -115,36 +105,22 @@ namespace Bank_Application.Services
 			}
 		}
 
+
 		public void MakeDeposit(long accNum, int amt)
 		{
-			con.Close();
-			con.Open();
+
 			try
 			{
-				SqlCommand cmd = new SqlCommand("select * from Customers where Account_Number = " + accNum, con);
-				SqlDataReader reader = cmd.ExecuteReader();
-				if (reader.HasRows)
-				{
+				SqlDataReader reader = SqlCommands.SelectSql(accNum, con);
 
-					reader.Read();
-					decimal bal = reader.GetDecimal(7);
+				reader.Read();
+				decimal bal = reader.GetDecimal(7);
+				bal += amt;
 
-					bal += amt;
-					con.Close();
-					con.Open();
-					SqlCommand cmd2 = new SqlCommand("UPDATE Customers SET Balance = " + bal + " where Account_Number = " + accNum, con);
-					cmd2.ExecuteNonQuery();
+				SqlCommands.UpdateSql(accNum, bal, con);
 
-					Inserttransaction(transactions(accNum, "Credit", bal, amt));
-					TrasactionDone(transactions(accNum, "Credit", bal, amt));
-
-				}
-				else
-				{
-					Console.WriteLine("Account Number Does not Exist");
-
-				}
-
+				Inserttransaction(transactions(accNum, "Credit", bal, amt));
+				TrasactionDone(transactions(accNum, "Credit", bal, amt));
 
 			}
 
@@ -154,84 +130,44 @@ namespace Bank_Application.Services
 
 			}
 		}
+
 		public void MakeTransfer(long accNumS, long accNumR, int amt)
 		{
-			con.Close();
-			con.Open();
 			try
 			{
-				SqlCommand cmd = new SqlCommand("select * from Customers where Account_Number = " + accNumR, con);
-				SqlDataReader reader = cmd.ExecuteReader();
-				if (reader.HasRows)
+				if (SqlCommands.CheckAccount(accNumS, con)
+					&& SqlCommands.CheckAccount(accNumR, con))
 				{
-					con.Close();
-					con.Open();
-					SqlCommand cmd2 = new SqlCommand("select * from Customers where Account_Number = " + accNumS, con);
-					SqlDataReader reader2 = cmd2.ExecuteReader();
-					if (reader2.HasRows)
-					{
-						MakeWithdraw(accNumS, amt);
-						MakeDeposit(accNumR, amt);
-
-					}
-					else
-					{
-						Console.WriteLine("Reciever Account Number Does not Exist");
-					}
-
-
+					MakeWithdraw(accNumS, amt);
+					MakeDeposit(accNumR, amt);
 				}
-				else
-				{
-					Console.WriteLine("Sender Account Number Does not Exist");
-
-				}
-
-
 			}
 
 			catch (Exception ex)
 			{
 				Console.WriteLine("Error message: " + ex.Message + " \nReasons: " + ex.StackTrace);
-
 			}
 		}
 
 		public void MakeWithdraw(long accNum, int amt)
 		{
-			con.Close();
-			con.Open();
 			try
 			{
-				SqlCommand cmd = new SqlCommand("select * from Customers where Account_Number = " + accNum, con);
-				SqlDataReader reader = cmd.ExecuteReader();
-				if (reader.HasRows)
+				SqlDataReader reader = SqlCommands.SelectSql(accNum, con);
+				reader.Read();
+
+				decimal bal = reader.GetDecimal(7);
+				if (bal > amt)
 				{
+					bal += amt;
+					SqlCommands.UpdateSql(accNum, bal, con);
 
-					reader.Read();
-					decimal bal = reader.GetDecimal(7);
-					if (bal > amt)
-					{
-						bal -= amt;
-						con.Close();
-						con.Open();
-						SqlCommand cmd2 = new SqlCommand("UPDATE Customers SET Balance = " + bal + " where Account_Number = " + accNum, con);
-						cmd2.ExecuteNonQuery();
-
-						Inserttransaction(transactions(accNum, "Debit", bal, amt));
-						TrasactionDone(transactions(accNum, "Debit", bal, amt));
-					}
-					else
-					{
-						Console.WriteLine("Withdrawal attempt failed.\n Insuficient Fund");
-					}
-
-
+					Inserttransaction(transactions(accNum, "Debit", bal, amt));
+					TrasactionDone(transactions(accNum, "Debit", bal, amt));
 				}
 				else
 				{
-					Console.WriteLine("Account Number Does not Exist");
-
+					Console.WriteLine("Withdrawal attempt failed.\n Insuficient Fund");
 				}
 
 
@@ -246,10 +182,6 @@ namespace Bank_Application.Services
 
 		public void GetAllCustomers()
 		{
-			con.Close();
-			con.Open();
-
-
 			try
 			{
 				SqlCommand cmd = new SqlCommand("select * from Customers", con);
@@ -288,14 +220,12 @@ namespace Bank_Application.Services
 		}
 		public void ShowStatement(long accNum)
 		{
-			con.Close();
-			con.Open();
-
-
+			
 			try
 			{
-				SqlCommand cmd = new SqlCommand("select * from Transactions where Account_Number = " + accNum, con);
-				SqlDataReader reader = cmd.ExecuteReader();
+
+				SqlDataReader reader = SqlCommands.SelectSqlT(accNum, con);
+
 				int i = 0;
 				Console.WriteLine("Account number\t  Transaction Type\t Balance\t"
 					+ "Amount\t  Date of Transaction");
